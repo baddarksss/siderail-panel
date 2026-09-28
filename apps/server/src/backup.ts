@@ -90,6 +90,17 @@ export function importData(
       keepLinks = [];
     }
   }
+  // 🧩 (وصلهٔ ما) مسیرهای «زندهٔ» اینباندها را پیش از پاک‌کردن نگه می‌داریم؛
+  //    ری‌استورِ بکاپِ سبک از آن استفاده می‌کند تا کانفیگِ کاربرانِ فعلی نشکند.
+  const livePaths = new Map<number, string>();
+  try {
+    for (const r of db
+      .prepare("SELECT id, path FROM inbounds")
+      .all() as unknown as { id: number; path: string }[])
+      livePaths.set(r.id, r.path);
+  } catch {
+    /* جدولِ تازه */
+  }
   const tx = () => {
     if (withUsers)
       db.exec("DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;");
@@ -100,15 +111,25 @@ export function importData(
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const ib of payload.inbounds) {
-      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)
-      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.
+      // 🧩 (وصلهٔ ما) قاعدهٔ مسیر در ری‌استور:
+      //   • مسیرِ دوبخشی (بکاپ‌های کاملِ قدیمی): فقط با تیکِ «مسیرهای تازه» عوض می‌شود.
+      //   • مسیرِ یک‌بخشی (خروجیِ بکاپِ سبک، مثل ‎/wpnfa‎): اگر پنل از قبل اینباندی با
+      //     همین شناسه و همین پیشوند دارد، «همان مسیرِ زنده» می‌ماند تا کانفیگِ
+      //     کاربرانِ فعلی نشکند؛ وگرنه (پنلِ خالی/تازه یا با تیکِ مسیرهای تازه)
+      //     دمِ رندومِ تازه ساخته می‌شود.
       let path = ib.path;
       const seg = String(ib.path || "").split("/").filter(Boolean);
-      // 🧩 (وصلهٔ ما) اگر بکاپ مسیرِ کوتاه (یک‌بخشی، مثل ‎/wpnfa‎) داشته باشد،
-      //    دمِ رندوم همین‌جا ساخته می‌شود — همیشه، نه فقط با گزینهٔ freshPaths.
-      if (seg.length >= 2 ? !!options.freshPaths : seg.length === 1) {
+      const fresh = () => {
         path = "/" + seg[0] + "/" + (ib.transport || "ws") + "-" + nanoid(8);
         freshPaths++;
+      };
+      if (seg.length >= 2) {
+        if (options.freshPaths) fresh();
+      } else if (seg.length === 1) {
+        const live = livePaths.get(ib.id) || "";
+        const liveSeg = String(live).split("/").filter(Boolean);
+        if (!options.freshPaths && liveSeg.length > 1 && liveSeg[0] === seg[0]) path = live;
+        else fresh();
       }
       insInbound.run(
         ib.id,

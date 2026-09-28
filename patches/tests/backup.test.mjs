@@ -64,7 +64,7 @@ t("بکاپِ کامل کاربران را دارد", full.users.length === 1 &&
 t("بکاپِ کامل مسیرها را هم کوتاه می‌کند", full.inbounds[0].path === "/wpnfa", full.inbounds[0].path);
 t("کمکیِ firstPathSegment درست کار می‌کند", firstPathSegment("/a/b/c") === "/a" && firstPathSegment("") === "");
 
-// ④ 🆕 ری‌استورِ بکاپِ سبک: مشتریانِ فعلی پاک نمی‌شوند و پیوندها برمی‌گردند
+// ④ 🆕 ری‌استورِ بکاپِ سبک: مشتریانِ فعلی پاک نمی‌شوند، پیوندها برمی‌گردند و مسیرِ زنده حفظ می‌شود
 const light2 = JSON.parse(JSON.stringify(light));
 light2.inbounds[0].label = "نامِ تازه";
 const before = db.prepare("SELECT path FROM inbounds WHERE id = 1").get().path;
@@ -73,8 +73,25 @@ t("ری‌استورِ سبک کاربران را نگه می‌دارد", db.pr
 t("پیوندِ کاربر↔اینباند برمی‌گردد", db.prepare("SELECT COUNT(*) c FROM user_inbounds").get().c === 1);
 t("نامِ تازهٔ اینباند اعمال شد", db.prepare("SELECT label FROM inbounds WHERE id = 1").get().label === "نامِ تازه");
 const after = db.prepare("SELECT path FROM inbounds WHERE id = 1").get().path;
-t("مسیرِ کوتاه در ری‌استور دمِ رندوم گرفت", /^\/wpnfa\/ws-[A-Za-z0-9_-]{8}$/.test(after) && after !== before, after);
-t("خروجیِ ری‌استورِ سبک: صفر کاربر ولی ۳ مسیرِ تازه", r2.users === 0 && r2.freshPaths === 3, JSON.stringify(r2));
+t("🛡 مسیرِ زندهٔ پنل دست‌نخورده ماند (کانفیگِ کاربران نمی‌شکند)", after === before, after);
+t("خروجیِ ری‌استورِ سبک: صفر کاربر و صفر مسیرِ تازه", r2.users === 0 && r2.freshPaths === 0, JSON.stringify(r2));
+
+// ④ب 🆕 ری‌استور روی پنلی که پیشوندِ مسیرش فرق دارد ⇒ دمِ رندوم، ولی پیوندها سالم
+db.prepare("UPDATE inbounds SET path = '/other/ws-ZZZZZZZZ' WHERE id = 1").run();
+const r2b = importData(light2);
+const rows2b = db.prepare("SELECT id, path FROM inbounds ORDER BY id").all();
+t("پیشوندِ متفاوت: مسیرِ یک‌بخشی دمِ رندوم گرفت", /^\/wpnfa\/ws-[A-Za-z0-9_-]{8}$/.test(rows2b[0].path), rows2b[0].path);
+t("پیشوندِ متفاوت: بخشِ اول از بکاپ آمد", rows2b[1].path.startsWith("/wpnfa/"), rows2b[1].path);
+t("پیشوندِ متفاوت: فقط همان یکی تازه شد (۲ تا حفظ شد)", r2b.freshPaths === 1, String(r2b.freshPaths));
+t("پیشوندِ متفاوت: کاربران سالم‌اند", db.prepare("SELECT COUNT(*) c FROM users").get().c === 1);
+t("پیشوندِ متفاوت: پیوندها هم برمی‌گردند", db.prepare("SELECT COUNT(*) c FROM user_inbounds").get().c === 1);
+
+// ④ج 🆕 تیکِ «مسیرهای تازه» روی بکاپِ سبک هم کار می‌کند (دمِ نو حتی یک‌بخشی)
+const p2 = db.prepare("SELECT path FROM inbounds WHERE id = 1").get().path;
+const r2c = importData(light2, { freshPaths: true });
+const p3 = db.prepare("SELECT path FROM inbounds WHERE id = 1").get().path;
+t("تیکِ «مسیرهای تازه» ⇒ دمِ نو برای مسیرِ یک‌بخشی", p3 !== p2 && /^\/wpnfa\/ws-[A-Za-z0-9_-]{8}$/.test(p3), p3);
+t("شمارنده در حالتِ تیک = ۳", r2c.freshPaths === 3, String(r2c.freshPaths));
 
 // ⑤ بکاپِ کامل هنوز کاربران را جای‌گزین می‌کند (رفتارِ قبلی)
 const withUsers = { version: 2, users: [{ ...db.prepare("SELECT * FROM users WHERE id = 7").get(), id: 9, email: "u9" }],
