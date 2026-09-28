@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import { nanoid } from "nanoid";
 import type { Inbound, UserRecord } from "./types.js";
 
 interface AdminBackup {
@@ -44,24 +45,40 @@ export function exportData(): BackupPayload {
   };
 }
 
-export function importData(payload: BackupPayload): { users: number; inbounds: number } {
+export function importData(
+  payload: BackupPayload,
+  options: { freshPaths?: boolean } = {},
+): { users: number; inbounds: number; freshPaths: number } {
   if (!payload || (payload.version !== 1 && payload.version !== 2))
     throw new Error("invalid backup version");
+  // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود
+  let freshPaths = 0;
   const tx = () => {
     db.exec("DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;");
 
     const insInbound = db.prepare(
-      `INSERT INTO inbounds (id, tag, protocol, transport, port, path, host, enabled, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO inbounds (id, tag, label, protocol, transport, port, path, host, enabled, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const ib of payload.inbounds) {
+      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)
+      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.
+      let path = ib.path;
+      if (options.freshPaths) {
+        const seg = String(ib.path || "").split("/").filter(Boolean);
+        if (seg.length >= 2) {
+          path = "/" + seg[0] + "/" + (ib.transport || "ws") + "-" + nanoid(8);
+          freshPaths++;
+        }
+      }
       insInbound.run(
         ib.id,
         ib.tag,
+        ib.label ?? "", // 🧩 نامِ اینباند (قبلاً جا می‌افتاد)
         ib.protocol,
         ib.transport,
         ib.port,
-        ib.path,
+        path,
         ib.host,
         ib.enabled,
         ib.created_at,
@@ -141,5 +158,5 @@ export function importData(payload: BackupPayload): { users: number; inbounds: n
     db.exec("ROLLBACK");
     throw e;
   }
-  return { users: payload.users.length, inbounds: payload.inbounds.length };
+  return { users: payload.users.length, inbounds: payload.inbounds.length, freshPaths };
 }

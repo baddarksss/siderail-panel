@@ -89,8 +89,10 @@ export function updateInbound(
 
   if (patch.tag !== undefined) {
     const tag = String(patch.tag).trim();
-    if (!/^[A-Za-z0-9 _.-]{1,32}$/.test(tag))
-      return { ok: false, error: "tag may only contain letters, digits, space, _ . -  (1..32)" };
+    // 🏷 (وصلهٔ ما) نامِ تگ آزاد است: فارسی/ایموجی/فاصله/| — فقط کاراکترهای
+    //    خطرناک ممنوع؛ چون تگ داخلِ JSON کانفیگ می‌رود و روتینگ با id وصل است.
+    if (tag.length < 1 || tag.length > 40 || /[\u0000-\u001f\u007f"'`\\<>]/.test(tag))
+      return { ok: false, error: "tag: 1..40 chars — no control/quotes/brackets" };
     const dup = db
       .prepare("SELECT id FROM inbounds WHERE tag = ? AND id <> ?")
       .get(tag, id) as { id: number } | undefined;

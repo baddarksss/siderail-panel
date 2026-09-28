@@ -362,6 +362,165 @@ sub("apps/server/src/routes.ts",
 # ۱۱) صفحهٔ اینباندها (کلِ فایل): دکمهٔ «✏️ ویرایش» با برچسب + دیالوگِ نام/تگ/مسیر
 #     + هشدارِ تغییرِ مسیر. فایلِ کامل در patches/files/inbounds.tsx نگه داشته می‌شود تا
 #     روی هر نسخهٔ تازهٔ upstream هم قابلِ بازتولید باشد.
+# ۱۲) 🏷 نامِ اینباند با فارسی/ایموجی/| هم پذیرفته شود ─────────────────────────
+#     چرا: کارفرما می‌خواست اینباند را «2 | هلند 🇳🇱» بنامد؛ فیلدِ تگ فقط
+#     [A-Za-z0-9 _.-] می‌پذیرفت. تگ داخلِ JSON کانفیگ می‌رود و روتینگ به آن با
+#     شناسهٔ (id) اینباند وصل است ⇒ تغییرِ نام بی‌خطر است. فقط کاراکترهایی که
+#     می‌توانند ساختار را بشکنند (کنترل/کوتیشن/بک‌اسلش/براکت) ممنوع می‌مانند.
+sub("apps/server/src/inbounds.ts",
+    '    if (!/^[A-Za-z0-9 _.-]{1,32}$/.test(tag))\n'
+    '      return { ok: false, error: "tag may only contain letters, digits, space, _ . -  (1..32)" };',
+    '    // 🏷 (وصلهٔ ما) نامِ تگ آزاد است: فارسی/ایموجی/فاصله/| — فقط کاراکترهای\n'
+    '    //    خطرناک ممنوع؛ چون تگ داخلِ JSON کانفیگ می‌رود و روتینگ با id وصل است.\n'
+    '    if (tag.length < 1 || tag.length > 40 || /[\\u0000-\\u001f\\u007f"\'`\\\\<>]/.test(tag))\n'
+    '      return { ok: false, error: "tag: 1..40 chars — no control/quotes/brackets" };',
+    "inbounds.ts: تگِ آزاد (فارسی/ایموجی)")
+
+# ۱۳) 💾 بکاپ: نامِ اینباند هم برگردد + گزینهٔ «رندومِ مسیرها تازه شود» ─────────
+#     باگ: خروجیِ بکاپ نام (label) را داشت (SELECT *)، ولی import آن را
+#     درج نمی‌کرد ⇒ بعد از ری‌استور، نامِ اینباندها می‌پرید.
+#     خواستهٔ کارفرما: در ری‌استور روی پنلِ تازه، فقط «بخشِ اولِ مسیر» (مثل wpnfa)
+#     از بکاپ بماند و بقیه (transport-rand8) رندومِ تازه بگیرد.
+sub("apps/server/src/backup.ts",
+    "  const tx = () => {\\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
+    "  // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود\\n"
+    "  let freshPaths = 0;\\n"
+    "  const tx = () => {\\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
+    "backup.ts: شمارندهٔ freshPaths")
+sub("apps/server/src/backup.ts",
+    "export function importData(payload: BackupPayload): { users: number; inbounds: number } {",
+    "export function importData(\n"
+    "  payload: BackupPayload,\n"
+    "  options: { freshPaths?: boolean } = {},\n"
+    "): { users: number; inbounds: number; freshPaths: number } {",
+    "backup.ts: امضای importData")
+sub("apps/server/src/backup.ts",
+    '      `INSERT INTO inbounds (id, tag, protocol, transport, port, path, host, enabled, created_at)\n'
+    '       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,',
+    '      `INSERT INTO inbounds (id, tag, label, protocol, transport, port, path, host, enabled, created_at)\n'
+    '       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,',
+    "backup.ts: label در INSERT")
+sub("apps/server/src/backup.ts",
+    "    for (const ib of payload.inbounds) {\n"
+    "      insInbound.run(\n"
+    "        ib.id,\n"
+    "        ib.tag,\n"
+    "        ib.protocol,\n"
+    "        ib.transport,\n"
+    "        ib.port,\n"
+    "        ib.path,\n"
+    "        ib.host,\n"
+    "        ib.enabled,\n"
+    "        ib.created_at,\n"
+    "      );\n"
+    "    }",
+    "    let freshPaths = 0;\n"
+    "    for (const ib of payload.inbounds) {\n"
+    "      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)\n"
+    "      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.\n"
+    "      let path = ib.path;\n"
+    "      if (options.freshPaths) {\n"
+    "        const seg = String(ib.path || \"\").split(\"/\").filter(Boolean);\n"
+    "        if (seg.length >= 2) {\n"
+    "          path = \"/\" + seg[0] + \"/\" + (ib.transport || \"ws\") + \"-\" + nanoid(8);\n"
+    "          freshPaths++;\n"
+    "        }\n"
+    "      }\n"
+    "      insInbound.run(\n"
+    "        ib.id,\n"
+    "        ib.tag,\n"
+    "        ib.label ?? \"\", // 🧩 نامِ اینباند (قبلاً جا می‌افتاد)\n"
+    "        ib.protocol,\n"
+    "        ib.transport,\n"
+    "        ib.port,\n"
+    "        path,\n"
+    "        ib.host,\n"
+    "        ib.enabled,\n"
+    "        ib.created_at,\n"
+    "      );\n"
+    "    }",
+    "backup.ts: label + مسیرِ تازه")
+sub("apps/server/src/backup.ts",
+    "  return { users: payload.users.length, inbounds: payload.inbounds.length };",
+    "  return { users: payload.users.length, inbounds: payload.inbounds.length, freshPaths };",
+    "backup.ts: خروجیِ import")
+sub("apps/server/src/backup.ts",
+    "import { nanoid } from \"nanoid\";",
+    "import { nanoid } from \"nanoid\";",
+    "backup.ts: nanoid (اگر بود)", required=False)
+sub("apps/server/src/backup.ts",
+    'import { db } from "./db.js";',
+    'import { db } from "./db.js";\nimport { nanoid } from "nanoid";',
+    "backup.ts: import nanoid", required=False)
+
+# ۱۴) مسیر HTTP: پرچمِ freshPaths برای ری‌استور
+sub("apps/server/src/routes.ts",
+    "    const result = importData(req.body);",
+    "    // 🧩 (وصلهٔ ما) ?freshPaths=1 ⇒ فقط پیشوندِ مسیر از بکاپ بماند و دمِ رندوم تازه شود\n"
+    "    const result = importData(req.body, { freshPaths: String(req.query.freshPaths || \"\") === \"1\" });",
+    "routes.ts: freshPaths در import")
+
+# ۱۵) UI: چک‌باکسِ «مسیرهای تازه» + عبورِ پرچم
+sub("apps/web/src/lib/api.ts",
+    '  importBackup: (data: unknown) =>\n'
+    '    request("/api/backup/import", { method: "POST", body: JSON.stringify(data) }),',
+    '  // 🧩 (وصلهٔ ما) freshPaths ⇒ پیشوندِ مسیر بماند، دمِ رندوم تازه شود\n'
+    '  importBackup: (data: unknown, freshPaths?: boolean) =>\n'
+    '    request(`/api/backup/import${freshPaths ? "?freshPaths=1" : ""}`, {\n'
+    '      method: "POST",\n'
+    '      body: JSON.stringify(data),\n'
+    '    }),',
+    "web/api.ts: importBackup(freshPaths)")
+sub("apps/web/src/pages/dashboard.tsx",
+    "  const [importing, setImporting] = React.useState(false);",
+    "  const [importing, setImporting] = React.useState(false);\n"
+    "  // 🧩 (وصلهٔ ما) مسیرهای تازه در ری‌استور (پیش‌فرض: خاموش = امن)\n"
+    "  const [freshPaths, setFreshPaths] = React.useState(false);",
+    "web/dashboard.tsx: state")
+sub("apps/web/src/pages/dashboard.tsx",
+    "      await api.importBackup(json);",
+    "      await api.importBackup(json, freshPaths);",
+    "web/dashboard.tsx: عبورِ freshPaths")
+sub("apps/web/src/pages/dashboard.tsx",
+    '          <p className="mt-3 text-xs font-base text-text/50">{t("importWarning")}</p>',
+    '          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-base border-2 border-border/60 p-3">\n'
+    '            <input\n'
+    '              type="checkbox"\n'
+    '              className="mt-0.5 h-4 w-4"\n'
+    '              checked={freshPaths}\n'
+    '              onChange={(e) => setFreshPaths(e.target.checked)}\n'
+    '            />\n'
+    '            <span>\n'
+    '              <span className="block font-heading text-sm">{t("importFreshPaths")}</span>\n'
+    '              <span className="block text-xs font-base text-text/60">{t("importFreshPathsHint")}</span>\n'
+    '            </span>\n'
+    '          </label>\n'
+    '          <p className="mt-3 text-xs font-base text-text/50">{t("importWarning")}</p>',
+    "web/dashboard.tsx: چک‌باکس")
+
+# ۱۶) i18n چک‌باکس
+I18N2 = {
+    "en": '  importFreshPaths: "Refresh config paths (keep the first part, like wpnfa)",\n  importFreshPathsHint: "Use this when restoring into a NEW panel: the first path segment is kept from the backup and the random tail is regenerated.",\n',
+    "ru": '  importFreshPaths: "Обновить пути конфигов (первая часть сохраняется, например wpnfa)",\n  importFreshPathsHint: "Для восстановления на НОВОЙ панели: первый сегмент пути берётся из бэкапа, случайная часть создаётся заново.",\n',
+    "zh": '  importFreshPaths: "刷新配置路径（保留第一段，如 wpnfa）",\n  importFreshPathsHint: "在新面板恢复时使用：路径的第一段取自备份，随机后缀重新生成。",\n',
+}
+_txt = read("apps/web/src/lib/i18n.tsx")
+_our2 = sorted({m.group(1) for blk in I18N2.values() for m in re.finditer(r"(\w+):", blk)})
+for _k in _our2:
+    _txt = re.sub(r"^\s*" + re.escape(_k) + r":.*\n", "", _txt, flags=re.M)
+for lang, block in I18N2.items():
+    marker = {"en": '  inboundUpdated: "Inbound updated",\n',
+              "ru": '  inboundUpdated: "Входящий обновлён",\n',
+              "zh": '  inboundUpdated: "入站已更新",\n'}[lang]
+    if block in _txt:
+        continue
+    if marker not in _txt:
+        print(f"❌ i18n2 ({lang}): لنگر پیدا نشد"); sys.exit(1)
+    _txt = _txt.replace(marker, marker + block, 1)
+if not CHECK:
+    write("apps/web/src/lib/i18n.tsx", _txt)
+done.append("web/i18n.tsx: کلیدهای ری‌استورِ مسیر")
+
 def copy_file(rel_src, rel_dst, label):
     # فایلِ منبع کنارِ خودِ این اسکریپت است (در حالتِ --check هم در دسترس باشد)
     src_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), rel_src.replace("patches/", "", 1))

@@ -81,6 +81,8 @@ export default function DashboardPage() {
   });
   const fileRef = React.useRef<HTMLInputElement>(null);
   const [importing, setImporting] = React.useState(false);
+  // 🧩 (وصلهٔ ما) مسیرهای تازه در ری‌استور (پیش‌فرض: خاموش = امن)
+  const [freshPaths, setFreshPaths] = React.useState(false);
 
   const s = data;
 
@@ -104,7 +106,7 @@ export default function DashboardPage() {
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      await api.importBackup(json);
+      await api.importBackup(json, freshPaths);
       toast.push("success", t("backupImported"));
     } catch (err) {
       toast.push("error", (err as Error).message || t("invalidBackup"));
@@ -255,6 +257,18 @@ export default function DashboardPage() {
               onChange={onFile}
             />
           </div>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-base border-2 border-border/60 p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={freshPaths}
+              onChange={(e) => setFreshPaths(e.target.checked)}
+            />
+            <span>
+              <span className="block font-heading text-sm">{t("importFreshPaths")}</span>
+              <span className="block text-xs font-base text-text/60">{t("importFreshPathsHint")}</span>
+            </span>
+          </label>
           <p className="mt-3 text-xs font-base text-text/50">{t("importWarning")}</p>
         </CardContent>
       </Card>

@@ -109,8 +109,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  importBackup: (data: unknown) =>
-    request("/api/backup/import", { method: "POST", body: JSON.stringify(data) }),
+  // 🧩 (وصلهٔ ما) freshPaths ⇒ پیشوندِ مسیر بماند، دمِ رندوم تازه شود
+  importBackup: (data: unknown, freshPaths?: boolean) =>
+    request(`/api/backup/import${freshPaths ? "?freshPaths=1" : ""}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   restartXray: () => request("/api/system/restart-xray", { method: "POST" }),
   admins: () =>
     request<{ admins: import("./types").AdminInfo[]; permissions: string[] }>("/api/admins"),

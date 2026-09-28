@@ -474,7 +474,8 @@ api.get("/backup/export", requirePermission("dashboard"), (req: AuthedRequest, r
 
 api.post("/backup/import", requirePermission("dashboard"), async (req: AuthedRequest, res) => {
   try {
-    const result = importData(req.body);
+    // 🧩 (وصلهٔ ما) ?freshPaths=1 ⇒ فقط پیشوندِ مسیر از بکاپ بماند و دمِ رندوم تازه شود
+    const result = importData(req.body, { freshPaths: String(req.query.freshPaths || "") === "1" });
     logActivity(
       req.admin!.username,
       "backup_import",
