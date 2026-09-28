@@ -306,6 +306,16 @@ export function collectClientIps(): void {
   }
 }
 
+/** 🧩 وصله: IPهای همهٔ کاربران یک‌جا (شمارشِ دستگاه‌ها در ربات) */
+export function getAllClientIps(): { user_id: number; clientEmail: string; ip: string; last_seen: number }[] {
+  return db
+    .prepare(
+      "SELECT c.user_id AS user_id, u.email AS clientEmail, c.ip AS ip, c.last_seen AS last_seen " +
+        "FROM client_ips c JOIN users u ON u.id = c.user_id ORDER BY c.last_seen DESC",
+    )
+    .all() as { user_id: number; clientEmail: string; ip: string; last_seen: number }[];
+}
+
 export function getClientIps(userId: number): { ip: string; last_seen: number }[] {
   return db
     .prepare("SELECT ip, last_seen FROM client_ips WHERE user_id = ? ORDER BY last_seen DESC")

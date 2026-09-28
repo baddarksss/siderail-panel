@@ -41,7 +41,7 @@ import {
   getUser,
   summarize,
 } from "./users.js";
-import { getClientIps, restartXray, getServerTraffic, getInboundTraffic } from "./xray.js";
+import { getClientIps, getAllClientIps, restartXray, getServerTraffic, getInboundTraffic } from "./xray.js";
 import { listActivity, logActivity, clearActivity } from "./activity.js";
 import { exportData, importData } from "./backup.js";
 import { loginRateLimit } from "./ratelimit.js";
@@ -223,6 +223,11 @@ api.get("/users", requirePermission("users"), (req: AuthedRequest, res) => {
 
 api.get("/users/summary", requirePermission("users"), (req: AuthedRequest, res) => {
   res.json(summarize(listUsers(scopeFor(req))));
+});
+
+/** 🧩 وصله: همهٔ IPها یک‌جا — ربات با یک درخواست دستگاه‌های همه را می‌شمارد */
+api.get("/ips", requirePermission("users"), (_req: AuthedRequest, res) => {
+  res.json({ ips: getAllClientIps() });
 });
 
 api.get("/users/:id/ips", requirePermission("users"), (req: AuthedRequest, res) => {

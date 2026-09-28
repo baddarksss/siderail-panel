@@ -298,6 +298,8 @@ for lang, block in I18N.items():
     marker = {"en": '  inboundUpdated: "Inbound updated",\n',
               "ru": '  inboundUpdated: "Входящий обновлён",\n',
               "zh": '  inboundUpdated: "入站已更新",\n'}[lang]
+    if block in txt:            # از قبل اعمال شده
+        continue
     if marker not in txt:
         print(f"❌ i18n ({lang}): لنگر پیدا نشد"); sys.exit(1)
     txt = txt.replace(marker, marker + block, 1)
@@ -324,6 +326,34 @@ sub("apps/server/src/routes.ts",
     "  expireDays: z.number().min(0).optional(),",
     "  expireDays: z.number().min(0).optional(),\n  expireAt: z.number().int().min(0).optional(),",
     "routes.ts: expireAt در userSchema")
+
+# ۱۰) همهٔ IPها یک‌جا — برای شمارشِ «چند دستگاه به این کانفیگ وصل است»
+#     (ربات با یک درخواست، تعداد دستگاهِ همهٔ کاربران را می‌گیرد)
+sub("apps/server/src/xray.ts",
+    "export function getClientIps(userId: number): { ip: string; last_seen: number }[] {",
+    "/** 🧩 وصله: IPهای همهٔ کاربران یک‌جا (شمارشِ دستگاه‌ها در ربات) */\n"
+    "export function getAllClientIps(): { user_id: number; clientEmail: string; ip: string; last_seen: number }[] {\n"
+    "  return db\n"
+    "    .prepare(\n"
+    '      "SELECT c.user_id AS user_id, u.email AS clientEmail, c.ip AS ip, c.last_seen AS last_seen " +\n'
+    '        "FROM client_ips c JOIN users u ON u.id = c.user_id ORDER BY c.last_seen DESC",\n'
+    "    )\n"
+    "    .all() as { user_id: number; clientEmail: string; ip: string; last_seen: number }[];\n"
+    "}\n\n"
+    "export function getClientIps(userId: number): { ip: string; last_seen: number }[] {",
+    "xray.ts: getAllClientIps")
+sub("apps/server/src/routes.ts",
+    'import { getClientIps, restartXray, getServerTraffic, getInboundTraffic } from "./xray.js";',
+    'import { getClientIps, getAllClientIps, restartXray, getServerTraffic, getInboundTraffic } from "./xray.js";',
+    "routes.ts: importِ getAllClientIps")
+sub("apps/server/src/routes.ts",
+    'api.get("/users/:id/ips", requirePermission("users"), (req: AuthedRequest, res) => {',
+    '/** 🧩 وصله: همهٔ IPها یک‌جا — ربات با یک درخواست دستگاه‌های همه را می‌شمارد */\n'
+    'api.get("/ips", requirePermission("users"), (_req: AuthedRequest, res) => {\n'
+    "  res.json({ ips: getAllClientIps() });\n"
+    "});\n\n"
+    'api.get("/users/:id/ips", requirePermission("users"), (req: AuthedRequest, res) => {',
+    "routes.ts: GET /ips")
 
 print("✅ وصله‌ها اعمال شد:" if not CHECK else "✅ بررسیِ لنگرها (بدونِ تغییر):")
 for d in done:
