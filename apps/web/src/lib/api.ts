@@ -168,6 +168,8 @@ export const api = {
   revokeApiToken: (id: number) => request(`/api/api-tokens/${id}`, { method: "DELETE" }),
 };
 
-export function exportBackupUrl(): string {
-  return "/api/backup/export";
+/** 🧩 (وصلهٔ ما) پیش‌فرض = بکاپِ سبک (تنظیمات + اینباندها، بدونِ مشتریان).
+ *  `full=true` ⇒ همان بکاپِ کاملِ قبلی (شاملِ کاربران و ادمین‌ها). */
+export function exportBackupUrl(full?: boolean): string {
+  return "/api/backup/export" + (full ? "?full=1" : "");
 }

@@ -387,7 +387,7 @@ sub("apps/server/src/inbounds.ts",
 #     از بکاپ بماند و بقیه (transport-rand8) رندومِ تازه بگیرد.
 sub("apps/server/src/backup.ts",
     "  const tx = () => {\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
-    "  // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود\n  let freshPaths = 0;\n  const tx = () => {\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
+    "  // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود\n  let freshPaths = 0;\n  // 🧩 (وصلهٔ ما) بکاپِ سبک (بدونِ کاربران) نباید مشتریانِ فعلیِ پنل را پاک کند:\n  //    فقط اینباندها و تنظیمات عوض می‌شوند. پیوندِ کاربر↔اینباند با حذفِ\n  //    اینباند آبشاری پاک می‌شود؛ پس اول نگهش می‌داریم و بعد دوباره وصل می‌کنیم.\n  const withUsers = Array.isArray(payload.users) && payload.users.length > 0;\n  let keepLinks: { user_id: number; inbound_id: number }[] = [];\n  if (!withUsers) {\n    try {\n      keepLinks = db\n        .prepare(\"SELECT user_id, inbound_id FROM user_inbounds\")\n        .all() as unknown as { user_id: number; inbound_id: number }[];\n    } catch {\n      keepLinks = [];\n    }\n  }\n  const tx = () => {\n    if (withUsers)\n      db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");\n    else db.exec(\"DELETE FROM inbounds;\");\n",
     "backup.ts: شمارندهٔ freshPaths")
 sub("apps/server/src/backup.ts",
     "export function importData(payload: BackupPayload): { users: number; inbounds: number } {",
@@ -404,11 +404,11 @@ sub("apps/server/src/backup.ts",
     "backup.ts: label در INSERT")
 sub("apps/server/src/backup.ts",
     "    for (const ib of payload.inbounds) {\n      insInbound.run(\n        ib.id,\n        ib.tag,\n        ib.protocol,\n        ib.transport,\n        ib.port,\n        ib.path,\n        ib.host,\n        ib.enabled,\n        ib.created_at,\n      );\n    }",
-    "    for (const ib of payload.inbounds) {\n      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)\n      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.\n      let path = ib.path;\n      if (options.freshPaths) {\n        const seg = String(ib.path || \"\").split(\"/\").filter(Boolean);\n        if (seg.length >= 2) {\n          path = \"/\" + seg[0] + \"/\" + (ib.transport || \"ws\") + \"-\" + nanoid(8);\n          freshPaths++;\n        }\n      }\n      insInbound.run(\n        ib.id,\n        ib.tag,\n        ib.label ?? \"\", // 🧩 نامِ اینباند (قبلاً جا می‌افتاد)\n        ib.protocol,\n        ib.transport,\n        ib.port,\n        path,\n        ib.host,\n        ib.enabled,\n        ib.created_at,\n      );\n    }",
+    "    for (const ib of payload.inbounds) {\n      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)\n      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.\n      let path = ib.path;\n      const seg = String(ib.path || \"\").split(\"/\").filter(Boolean);\n      // 🧩 (وصلهٔ ما) اگر بکاپ مسیرِ کوتاه (یک‌بخشی، مثل ‎/wpnfa‎) داشته باشد،\n      //    دمِ رندوم همین‌جا ساخته می‌شود — همیشه، نه فقط با گزینهٔ freshPaths.\n      if (seg.length >= 2 ? !!options.freshPaths : seg.length === 1) {\n        path = \"/\" + seg[0] + \"/\" + (ib.transport || \"ws\") + \"-\" + nanoid(8);\n        freshPaths++;\n      }\n      insInbound.run(\n        ib.id,\n        ib.tag,\n        ib.label ?? \"\", // 🧩 نامِ اینباند (قبلاً جا می‌افتاد)\n        ib.protocol,\n        ib.transport,\n        ib.port,\n        path,\n        ib.host,\n        ib.enabled,\n        ib.created_at,\n      );\n    }\n",
     "backup.ts: label + مسیرِ تازه")
 sub("apps/server/src/backup.ts",
     "  return { users: payload.users.length, inbounds: payload.inbounds.length };",
-    "  return { users: payload.users.length, inbounds: payload.inbounds.length, freshPaths };",
+    "  return {\n    users: (payload.users || []).length,\n    inbounds: (payload.inbounds || []).length,\n    freshPaths,\n  };\n",
     "backup.ts: خروجیِ import")
 sub("apps/server/src/backup.ts",
     "import { nanoid } from \"nanoid\";",
@@ -510,6 +510,11 @@ copy_file("patches/files/inbounds.tsx", "apps/web/src/pages/inbounds.tsx",
 _sect = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sections_bot_token.py")
 if os.path.exists(_sect):
     exec(compile(io.open(_sect, encoding="utf-8").read(), "sections_bot_token.py", "exec"), globals())
+
+# ── ۲۲) 💾 بکاپِ سبک: فقط تنظیمات + مسیرِ کوتاه (فایلِ جدا) ────────────────────
+_sect2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sections_backup_light.py")
+if os.path.exists(_sect2):
+    exec(compile(io.open(_sect2, encoding="utf-8").read(), "sections_backup_light.py", "exec"), globals())
 
 print("✅ وصله‌ها اعمال شد:" if not CHECK else "✅ بررسیِ لنگرها (بدونِ تغییر):")
 for d in done:

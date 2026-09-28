@@ -2,6 +2,15 @@ import { db } from "./db.js";
 import { nanoid } from "nanoid";
 import type { Inbound, UserRecord } from "./types.js";
 
+/** 🧩 (وصلهٔ ما) فقط «بخشِ اول» مسیر را نگه می‌دارد: ‎/wpnfa/ws-x‎ ⇒ ‎/wpnfa‎
+ *  چرا: مسیرِ کامل، کلیدِ زندهٔ تونلِ کاربران است و نباید در فایلِ بکاپ بیفتد.
+ *  دمِ رندوم هنگامِ ری‌استور تازه ساخته می‌شود. مسیرِ خالی دست‌نخورده می‌ماند. */
+export function firstPathSegment(path: unknown): string {
+  const seg = String(path || "").split("/").filter(Boolean);
+  return seg.length ? "/" + seg[0] : String(path || "");
+}
+
+
 interface AdminBackup {
   id: number;
   username: string;
@@ -22,14 +31,28 @@ interface BackupPayload {
   settings?: { key: string; value: string }[];
 }
 
-export function exportData(): BackupPayload {
-  const users = db.prepare("SELECT * FROM users").all() as unknown as UserRecord[];
-  const inbounds = db.prepare("SELECT * FROM inbounds").all() as unknown as Inbound[];
-  const links = db.prepare("SELECT user_id, inbound_id FROM user_inbounds").all() as unknown as {
-    user_id: number;
-    inbound_id: number;
-  }[];
-  const admins = db.prepare("SELECT * FROM admins").all() as unknown as AdminBackup[];
+/** 🧩 (وصلهٔ ما) بکاپِ سبک = «فقط تنظیمات».
+ *  • `settingsOnly !== false` (پیش‌فرض): لیستِ مشتریان (`users`/`user_inbounds`)
+ *    و `admins` در فایل نمی‌آید ⇒ بکاپِ قابلِ جابه‌جایی.
+ *  • مسیرِ اینباندها فقط بخشِ اولشان ذخیره می‌شود (‎/wpnfa‎).
+ *  • برای بکاپِ کاملِ قبلی: `exportData({ settingsOnly: false })` یا `?full=1`. */
+export function exportData(options: { settingsOnly?: boolean } = {}): BackupPayload {
+  const settingsOnly = options.settingsOnly !== false;
+  const users = settingsOnly
+    ? []
+    : (db.prepare("SELECT * FROM users").all() as unknown as UserRecord[]);
+  const inbounds = (db.prepare("SELECT * FROM inbounds").all() as unknown as Inbound[]).map(
+    (ib) => ({ ...ib, path: firstPathSegment(ib.path) }),
+  );
+  const links = settingsOnly
+    ? []
+    : (db.prepare("SELECT user_id, inbound_id FROM user_inbounds").all() as unknown as {
+        user_id: number;
+        inbound_id: number;
+      }[]);
+  const admins = settingsOnly
+    ? []
+    : (db.prepare("SELECT * FROM admins").all() as unknown as AdminBackup[]);
   const settings = db.prepare("SELECT key, value FROM settings").all() as unknown as {
     key: string;
     value: string;
@@ -53,8 +76,24 @@ export function importData(
     throw new Error("invalid backup version");
   // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود
   let freshPaths = 0;
+  // 🧩 (وصلهٔ ما) بکاپِ سبک (بدونِ کاربران) نباید مشتریانِ فعلیِ پنل را پاک کند:
+  //    فقط اینباندها و تنظیمات عوض می‌شوند. پیوندِ کاربر↔اینباند با حذفِ
+  //    اینباند آبشاری پاک می‌شود؛ پس اول نگهش می‌داریم و بعد دوباره وصل می‌کنیم.
+  const withUsers = Array.isArray(payload.users) && payload.users.length > 0;
+  let keepLinks: { user_id: number; inbound_id: number }[] = [];
+  if (!withUsers) {
+    try {
+      keepLinks = db
+        .prepare("SELECT user_id, inbound_id FROM user_inbounds")
+        .all() as unknown as { user_id: number; inbound_id: number }[];
+    } catch {
+      keepLinks = [];
+    }
+  }
   const tx = () => {
-    db.exec("DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;");
+    if (withUsers)
+      db.exec("DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;");
+    else db.exec("DELETE FROM inbounds;");
 
     const insInbound = db.prepare(
       `INSERT INTO inbounds (id, tag, label, protocol, transport, port, path, host, enabled, created_at)
@@ -64,12 +103,12 @@ export function importData(
       // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)
       //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.
       let path = ib.path;
-      if (options.freshPaths) {
-        const seg = String(ib.path || "").split("/").filter(Boolean);
-        if (seg.length >= 2) {
-          path = "/" + seg[0] + "/" + (ib.transport || "ws") + "-" + nanoid(8);
-          freshPaths++;
-        }
+      const seg = String(ib.path || "").split("/").filter(Boolean);
+      // 🧩 (وصلهٔ ما) اگر بکاپ مسیرِ کوتاه (یک‌بخشی، مثل ‎/wpnfa‎) داشته باشد،
+      //    دمِ رندوم همین‌جا ساخته می‌شود — همیشه، نه فقط با گزینهٔ freshPaths.
+      if (seg.length >= 2 ? !!options.freshPaths : seg.length === 1) {
+        path = "/" + seg[0] + "/" + (ib.transport || "ws") + "-" + nanoid(8);
+        freshPaths++;
       }
       insInbound.run(
         ib.id,
@@ -123,6 +162,8 @@ export function importData(
       "INSERT OR IGNORE INTO user_inbounds (user_id, inbound_id) VALUES (?, ?)",
     );
     for (const l of payload.user_inbounds) insLink.run(l.user_id, l.inbound_id);
+    // 🧩 (وصلهٔ ما) بکاپِ سبک: کاربرانِ فعلی با همین شناسه‌های اینباند وصل می‌مانند
+    if (!withUsers) for (const l of keepLinks) insLink.run(l.user_id, l.inbound_id);
 
     if (payload.admins && payload.admins.length > 0) {
       db.exec("DELETE FROM admins");
@@ -158,5 +199,9 @@ export function importData(
     db.exec("ROLLBACK");
     throw e;
   }
-  return { users: payload.users.length, inbounds: payload.inbounds.length, freshPaths };
+  return {
+    users: (payload.users || []).length,
+    inbounds: (payload.inbounds || []).length,
+    freshPaths,
+  };
 }

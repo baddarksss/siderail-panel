@@ -97,6 +97,12 @@ export default function DashboardPage() {
     toast.push("success", t("backupExportStarted"));
   };
 
+  // 🧩 (وصلهٔ ما) بکاپِ کامل (شاملِ لیستِ مشتریان) برای مهاجرتِ کاربران
+  const onExportFull = () => {
+    window.open(exportBackupUrl(true), "_blank");
+    toast.push("success", t("backupExportStarted"));
+  };
+
   const onImportClick = () => fileRef.current?.click();
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,6 +240,15 @@ export default function DashboardPage() {
               <div>
                 <div className="font-heading">{t("exportBackup")}</div>
                 <div className="text-xs text-text/60">{t("exportBackupDesc")}</div>
+                <span
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onExportFull();
+                  }}
+                  className="mt-1 inline-block text-[11px] underline decoration-dotted opacity-70 hover:opacity-100"
+                >
+                  {t("exportFullBackup")}
+                </span>
               </div>
             </button>
             <button

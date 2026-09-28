@@ -473,10 +473,16 @@ api.delete("/admins/:id", requireOwner, (req: AuthedRequest, res) => {
 });
 
 api.get("/backup/export", requirePermission("dashboard"), (req: AuthedRequest, res) => {
-  logActivity(req.admin!.username, "backup_export", "");
+  // 🧩 (وصلهٔ ما) پیش‌فرض = «بکاپِ سبک»: فقط تنظیمات/اینباندها، بدونِ لیستِ
+  //    مشتریان و با مسیرهای کوتاه (‎/wpnfa‎). `?full=1` = بکاپِ کاملِ قبلی.
+  const full = String(req.query.full || "") === "1";
+  logActivity(req.admin!.username, "backup_export", full ? "full" : "settings-only");
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Content-Disposition", `attachment; filename="siderail-backup-${Date.now()}.json"`);
-  res.send(JSON.stringify(exportData(), null, 2));
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="siderail-${full ? "backup" : "settings"}-${Date.now()}.json"`,
+  );
+  res.send(JSON.stringify(exportData({ settingsOnly: !full }), null, 2));
 });
 
 api.post("/backup/import", requirePermission("dashboard"), async (req: AuthedRequest, res) => {
