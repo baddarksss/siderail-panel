@@ -16,7 +16,7 @@ SRC="$(ls -d "$TMP"/SideRail-* | head -1)"
 if [ -n "$CHECK" ]; then
   echo "🔎 حالتِ بررسی: وصله‌ها روی سورسِ تازهٔ upstream آزموده می‌شوند (بدونِ تغییرِ ریپو)"
   cp -a "$SRC/apps" "$TMP/apps"
-  mkdir -p "$TMP/patches" && cp "$HERE/patches/panel-patch.py" "$TMP/patches/"
+  rm -rf "$TMP/patches" && cp -a "$HERE/patches" "$TMP/patches"   # کلِ پوشه (شاملِ files/)
   python3 "$TMP/patches/panel-patch.py" --root "$TMP"
   echo "✅ وصله‌ها روی نسخهٔ تازهٔ upstream بی‌ایراد اعمال شدند"
   rm -rf "$TMP"; exit 0

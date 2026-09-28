@@ -289,11 +289,15 @@ sub("apps/web/src/lib/api.ts",
     "web/api.ts: updateInbound")
 
 I18N = {
-    "en": '  inboundLabel: "Config name",\n  inboundTag: "Inbound tag",\n  inboundEditTitle: "Edit inbound",\n  inboundEditHint: "The config name shows up in the client. Path is what the tunnel listens on.",\n  inboundSaved: "Inbound saved",\n',
-    "ru": '  inboundLabel: "Имя конфига",\n  inboundTag: "Тег входа",\n  inboundEditTitle: "Изменить входящий",\n  inboundEditHint: "Имя конфига отображается в клиенте. Путь — адрес туннеля.",\n  inboundSaved: "Входящий сохранён",\n',
-    "zh": '  inboundLabel: "配置名称",\n  inboundTag: "入站标签",\n  inboundEditTitle: "编辑入站",\n  inboundEditHint: "配置名称会显示在客户端中。路径是隧道监听的地址。",\n  inboundSaved: "入站已保存",\n',
+    "en": '  editShort: "Edit",\n  inboundPathWarn: "⚠️ Changing the path breaks the configs already given to users from this inbound. The tag and the display name are safe to change.",\n  inboundLabel: "Config name",\n  inboundTag: "Inbound tag",\n  inboundEditTitle: "Edit inbound",\n  inboundEditHint: "The config name shows up in the client. Path is what the tunnel listens on.",\n  inboundSaved: "Inbound saved",\n',
+    "ru": '  editShort: "Изменить",\n  inboundPathWarn: "⚠️ Смена пути сломает уже выданные конфиги этого входа. Тег и отображаемое имя менять безопасно.",\n  inboundLabel: "Имя конфига",\n  inboundTag: "Тег входа",\n  inboundEditTitle: "Изменить входящий",\n  inboundEditHint: "Имя конфига отображается в клиенте. Путь — адрес туннеля.",\n  inboundSaved: "Входящий сохранён",\n',
+    "zh": '  editShort: "编辑",\n  inboundPathWarn: "⚠️ 更改路径会使该入站已发给用户的配置失效。标签和显示名称可以安全更改。",\n  inboundLabel: "配置名称",\n  inboundTag: "入站标签",\n  inboundEditTitle: "编辑入站",\n  inboundEditHint: "配置名称会显示在客户端中。路径是隧道监听的地址。",\n  inboundSaved: "入站已保存",\n',
 }
 txt = read("apps/web/src/lib/i18n.tsx")
+# پاک‌سازیِ نسخهٔ قبلیِ همین کلیدها (اجرای دوباره‌ی وصله‌گر نباید کلید تکراری بسازد)
+_our_keys = sorted({m.group(1) for blk in I18N.values() for m in re.finditer(r"(\w+):", blk)})
+for _k in _our_keys:
+    txt = re.sub(r"^\s*" + re.escape(_k) + r":.*\n", "", txt, flags=re.M)
 for lang, block in I18N.items():
     marker = {"en": '  inboundUpdated: "Inbound updated",\n',
               "ru": '  inboundUpdated: "Входящий обновлён",\n',
@@ -354,6 +358,28 @@ sub("apps/server/src/routes.ts",
     "});\n\n"
     'api.get("/users/:id/ips", requirePermission("users"), (req: AuthedRequest, res) => {',
     "routes.ts: GET /ips")
+
+# ۱۱) صفحهٔ اینباندها (کلِ فایل): دکمهٔ «✏️ ویرایش» با برچسب + دیالوگِ نام/تگ/مسیر
+#     + هشدارِ تغییرِ مسیر. فایلِ کامل در patches/files/inbounds.tsx نگه داشته می‌شود تا
+#     روی هر نسخهٔ تازهٔ upstream هم قابلِ بازتولید باشد.
+def copy_file(rel_src, rel_dst, label):
+    # فایلِ منبع کنارِ خودِ این اسکریپت است (در حالتِ --check هم در دسترس باشد)
+    src_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), rel_src.replace("patches/", "", 1))
+    dst_p = os.path.join(ROOT, rel_dst)
+    if not os.path.exists(src_p):
+        print(f"❌ {label}: فایلِ منبع پیدا نشد ({rel_src})"); sys.exit(1)
+    new_txt = io.open(src_p, encoding="utf-8").read()
+    old_txt = io.open(dst_p, encoding="utf-8").read() if os.path.exists(dst_p) else ""
+    if old_txt == new_txt:
+        done.append(label + " (از قبل)"); return
+    if "InboundsPage" not in old_txt:
+        print(f"❌ {label}: فایلِ مقصد شکلِ موردانتظار را ندارد"); sys.exit(1)
+    if not CHECK:
+        io.open(dst_p, "w", encoding="utf-8").write(new_txt)
+    done.append(label)
+
+copy_file("patches/files/inbounds.tsx", "apps/web/src/pages/inbounds.tsx",
+          "web/inbounds.tsx: دکمهٔ ویرایش + هشدارِ مسیر")
 
 print("✅ وصله‌ها اعمال شد:" if not CHECK else "✅ بررسیِ لنگرها (بدونِ تغییر):")
 for d in done:
