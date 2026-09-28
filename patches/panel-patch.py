@@ -13,7 +13,7 @@
 #  اجرا:  python3 patches/panel-patch.py [--check] [--root /path/to/SideRail]
 #  اعمال روی نسخهٔ تازهٔ upstream:  ./apply_upstream.sh
 # ─────────────────────────────────────────────────────────────────────────────
-import argparse, io, os, re, sys
+import argparse, io, json, os, re, sys
 
 ROOT = os.environ.get("SIDERAIL_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 done, skipped = [], []
@@ -62,104 +62,108 @@ sub("apps/server/src/db.ts",
     "db.ts: مهاجرتِ ستونِ label")
 
 # ۳) اینباندها: بذر با label + توابعِ ویرایش/اعتبارسنجیِ مسیر ─────────────────
-sub("apps/server/src/inbounds.ts",
-    "    `INSERT INTO inbounds (tag, protocol, transport, port, path, host, enabled, created_at)\n"
-    "     VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,",
-    "    `INSERT INTO inbounds (tag, label, protocol, transport, port, path, host, enabled, created_at)\n"
-    "     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,",
-    "inbounds.ts: INSERT با label")
-sub("apps/server/src/inbounds.ts",
-    "    insert.run(s.tag, s.protocol, s.transport, port, path, \"\", Date.now());",
-    "    insert.run(s.tag, s.tag, s.protocol, s.transport, port, path, \"\", Date.now());",
-    "inbounds.ts: مقدارِ label در بذر")
+# 🔁 اگر توابعِ ما از قبل هستند (سورسِ وصله‌خورده)، دوباره اضافه نکن
+if "export function updateInbound(" in read("apps/server/src/inbounds.ts"):
+    done.append("inbounds.ts: updateInbound + normalizeInboundPath (از قبل)")
+else:
+    sub("apps/server/src/inbounds.ts",
+        "    `INSERT INTO inbounds (tag, protocol, transport, port, path, host, enabled, created_at)\n"
+        "     VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,",
+        "    `INSERT INTO inbounds (tag, label, protocol, transport, port, path, host, enabled, created_at)\n"
+        "     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,",
+        "inbounds.ts: INSERT با label")
+    sub("apps/server/src/inbounds.ts",
+        "    insert.run(s.tag, s.protocol, s.transport, port, path, \"\", Date.now());",
+        "    insert.run(s.tag, s.tag, s.protocol, s.transport, port, path, \"\", Date.now());",
+        "inbounds.ts: مقدارِ label در بذر")
 
-UPDATE_CODE = '''
-/** ── وصلهٔ ما ────────────────────────────────────────────────────────────────
- *  مسیرِ اینباند: هر مسیری مجاز است به‌شرطِ اینکه:
- *    • با «/» شروع و با حرف/عدد شروع شود، ۱..۴ بخش، بدونِ نویسهٔ عجیب
- *    • رزروشده نباشد: /api · /sub · /assets · /favicon · /healthz (این‌ها را خودِ اپ می‌خواهد)
- *  نیازی نیست «SideRail» در مسیر باشد — منطقِ تونل (tunnel.ts → matchInbound)
- *  فقط تطبیقِ دقیق/پیشوندی با همان مسیر را چک می‌کند.
- */
-export function normalizeInboundPath(
-  input: string,
-): { ok: true; path: string } | { ok: false; error: string } {
-  let p = String(input || "").trim();
-  if (!p.startsWith("/")) p = "/" + p;
-  p = p.replace(/\\/+$/, "");
-  if (p.length < 2 || p.length > 64) return { ok: false, error: "path length must be 2..64" };
-  if (!/^\\/[A-Za-z0-9][A-Za-z0-9/_.~-]*$/.test(p))
-    return { ok: false, error: "path may only contain letters, digits and / _ . ~ -" };
-  if (p.split("/").length > 5) return { ok: false, error: "path is too deep" };
-  const reserved = ["/api", "/sub", "/assets", "/favicon", "/healthz"];
-  if (reserved.some((r) => p === r || p.startsWith(r + "/")))
-    return { ok: false, error: "path is reserved by the panel" };
-  return { ok: true, path: p };
-}
-
-/** ویرایشِ نامِ نمایشی/تگ/مسیرِ اینباند (نامِ کانفیگِ کاربران از همین می‌آید). */
-export function updateInbound(
-  id: number,
-  patch: { tag?: string; label?: string; path?: string },
-): { ok: true; changed: string[] } | { ok: false; error: string } {
-  const ib = getInbound(id);
-  if (!ib) return { ok: false, error: "inbound not found" };
-  const sets: string[] = [];
-  const vals: (string | number)[] = [];
-  const changed: string[] = [];
-
-  if (patch.tag !== undefined) {
-    const tag = String(patch.tag).trim();
-    if (!/^[A-Za-z0-9 _.-]{1,32}$/.test(tag))
-      return { ok: false, error: "tag may only contain letters, digits, space, _ . -  (1..32)" };
-    const dup = db
-      .prepare("SELECT id FROM inbounds WHERE tag = ? AND id <> ?")
-      .get(tag, id) as { id: number } | undefined;
-    if (dup) return { ok: false, error: "tag already exists" };
-    if (tag !== ib.tag) {
-      sets.push("tag = ?");
-      vals.push(tag);
-      changed.push("tag");
+    UPDATE_CODE = '''
+    /** ── وصلهٔ ما ────────────────────────────────────────────────────────────────
+     *  مسیرِ اینباند: هر مسیری مجاز است به‌شرطِ اینکه:
+     *    • با «/» شروع و با حرف/عدد شروع شود، ۱..۴ بخش، بدونِ نویسهٔ عجیب
+     *    • رزروشده نباشد: /api · /sub · /assets · /favicon · /healthz (این‌ها را خودِ اپ می‌خواهد)
+     *  نیازی نیست «SideRail» در مسیر باشد — منطقِ تونل (tunnel.ts → matchInbound)
+     *  فقط تطبیقِ دقیق/پیشوندی با همان مسیر را چک می‌کند.
+     */
+    export function normalizeInboundPath(
+      input: string,
+    ): { ok: true; path: string } | { ok: false; error: string } {
+      let p = String(input || "").trim();
+      if (!p.startsWith("/")) p = "/" + p;
+      p = p.replace(/\\/+$/, "");
+      if (p.length < 2 || p.length > 64) return { ok: false, error: "path length must be 2..64" };
+      if (!/^\\/[A-Za-z0-9][A-Za-z0-9/_.~-]*$/.test(p))
+        return { ok: false, error: "path may only contain letters, digits and / _ . ~ -" };
+      if (p.split("/").length > 5) return { ok: false, error: "path is too deep" };
+      const reserved = ["/api", "/sub", "/assets", "/favicon", "/healthz"];
+      if (reserved.some((r) => p === r || p.startsWith(r + "/")))
+        return { ok: false, error: "path is reserved by the panel" };
+      return { ok: true, path: p };
     }
-  }
 
-  if (patch.label !== undefined) {
-    const label = String(patch.label).trim();
-    if (label.length > 48) return { ok: false, error: "label must be at most 48 characters" };
-    if (label !== ib.label) {
-      sets.push("label = ?");
-      vals.push(label);
-      changed.push("label");
+    /** ویرایشِ نامِ نمایشی/تگ/مسیرِ اینباند (نامِ کانفیگِ کاربران از همین می‌آید). */
+    export function updateInbound(
+      id: number,
+      patch: { tag?: string; label?: string; path?: string },
+    ): { ok: true; changed: string[] } | { ok: false; error: string } {
+      const ib = getInbound(id);
+      if (!ib) return { ok: false, error: "inbound not found" };
+      const sets: string[] = [];
+      const vals: (string | number)[] = [];
+      const changed: string[] = [];
+
+      if (patch.tag !== undefined) {
+        const tag = String(patch.tag).trim();
+        if (!/^[A-Za-z0-9 _.-]{1,32}$/.test(tag))
+          return { ok: false, error: "tag may only contain letters, digits, space, _ . -  (1..32)" };
+        const dup = db
+          .prepare("SELECT id FROM inbounds WHERE tag = ? AND id <> ?")
+          .get(tag, id) as { id: number } | undefined;
+        if (dup) return { ok: false, error: "tag already exists" };
+        if (tag !== ib.tag) {
+          sets.push("tag = ?");
+          vals.push(tag);
+          changed.push("tag");
+        }
+      }
+
+      if (patch.label !== undefined) {
+        const label = String(patch.label).trim();
+        if (label.length > 48) return { ok: false, error: "label must be at most 48 characters" };
+        if (label !== ib.label) {
+          sets.push("label = ?");
+          vals.push(label);
+          changed.push("label");
+        }
+      }
+
+      if (patch.path !== undefined) {
+        const norm = normalizeInboundPath(patch.path);
+        if (!norm.ok) return { ok: false, error: norm.error };
+        const dup = db
+          .prepare("SELECT id FROM inbounds WHERE path = ? AND id <> ?")
+          .get(norm.path, id) as { id: number } | undefined;
+        if (dup) return { ok: false, error: "path already used by another inbound" };
+        if (norm.path !== ib.path) {
+          sets.push("path = ?");
+          vals.push(norm.path);
+          changed.push("path");
+        }
+      }
+
+      if (sets.length === 0) return { ok: true, changed: [] };
+      vals.push(id);
+      db.prepare(`UPDATE inbounds SET ${sets.join(", ")} WHERE id = ?`).run(...(vals as never[]));
+      return { ok: true, changed };
     }
-  }
-
-  if (patch.path !== undefined) {
-    const norm = normalizeInboundPath(patch.path);
-    if (!norm.ok) return { ok: false, error: norm.error };
-    const dup = db
-      .prepare("SELECT id FROM inbounds WHERE path = ? AND id <> ?")
-      .get(norm.path, id) as { id: number } | undefined;
-    if (dup) return { ok: false, error: "path already used by another inbound" };
-    if (norm.path !== ib.path) {
-      sets.push("path = ?");
-      vals.push(norm.path);
-      changed.push("path");
-    }
-  }
-
-  if (sets.length === 0) return { ok: true, changed: [] };
-  vals.push(id);
-  db.prepare(`UPDATE inbounds SET ${sets.join(", ")} WHERE id = ?`).run(...(vals as never[]));
-  return { ok: true, changed };
-}
-'''
-# انتهای inbounds.ts (بعد از setInboundEnabled)
-sub("apps/server/src/inbounds.ts",
-    "export function setInboundEnabled(id: number, enabled: boolean): void {\n"
-    "  db.prepare(\"UPDATE inbounds SET enabled = ? WHERE id = ?\").run(enabled ? 1 : 0, id);\n}\n",
-    "export function setInboundEnabled(id: number, enabled: boolean): void {\n"
-    "  db.prepare(\"UPDATE inbounds SET enabled = ? WHERE id = ?\").run(enabled ? 1 : 0, id);\n}\n" + UPDATE_CODE,
-    "inbounds.ts: updateInbound + normalizeInboundPath")
+    '''
+    # انتهای inbounds.ts (بعد از setInboundEnabled)
+    sub("apps/server/src/inbounds.ts",
+        "export function setInboundEnabled(id: number, enabled: boolean): void {\n"
+        "  db.prepare(\"UPDATE inbounds SET enabled = ? WHERE id = ?\").run(enabled ? 1 : 0, id);\n}\n",
+        "export function setInboundEnabled(id: number, enabled: boolean): void {\n"
+        "  db.prepare(\"UPDATE inbounds SET enabled = ? WHERE id = ?\").run(enabled ? 1 : 0, id);\n}\n" + UPDATE_CODE,
+        "inbounds.ts: updateInbound + normalizeInboundPath")
 
 # ۴) نامِ کانفیگ = label || tag (بدونِ پیشوندِ برند) ──────────────────────────
 sub("apps/server/src/links.ts",
@@ -382,10 +386,8 @@ sub("apps/server/src/inbounds.ts",
 #     خواستهٔ کارفرما: در ری‌استور روی پنلِ تازه، فقط «بخشِ اولِ مسیر» (مثل wpnfa)
 #     از بکاپ بماند و بقیه (transport-rand8) رندومِ تازه بگیرد.
 sub("apps/server/src/backup.ts",
-    "  const tx = () => {\\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
-    "  // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود\\n"
-    "  let freshPaths = 0;\\n"
-    "  const tx = () => {\\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
+    "  const tx = () => {\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
+    "  // 🧩 (وصلهٔ ما) شمارندهٔ مسیرهای تازه‌ساخته‌شده — بیرونِ تراکنش تعریف می‌شود\n  let freshPaths = 0;\n  const tx = () => {\n    db.exec(\"DELETE FROM user_inbounds; DELETE FROM users; DELETE FROM inbounds;\");",
     "backup.ts: شمارندهٔ freshPaths")
 sub("apps/server/src/backup.ts",
     "export function importData(payload: BackupPayload): { users: number; inbounds: number } {",
@@ -401,44 +403,8 @@ sub("apps/server/src/backup.ts",
     '       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,',
     "backup.ts: label در INSERT")
 sub("apps/server/src/backup.ts",
-    "    for (const ib of payload.inbounds) {\n"
-    "      insInbound.run(\n"
-    "        ib.id,\n"
-    "        ib.tag,\n"
-    "        ib.protocol,\n"
-    "        ib.transport,\n"
-    "        ib.port,\n"
-    "        ib.path,\n"
-    "        ib.host,\n"
-    "        ib.enabled,\n"
-    "        ib.created_at,\n"
-    "      );\n"
-    "    }",
-    "    let freshPaths = 0;\n"
-    "    for (const ib of payload.inbounds) {\n"
-    "      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)\n"
-    "      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.\n"
-    "      let path = ib.path;\n"
-    "      if (options.freshPaths) {\n"
-    "        const seg = String(ib.path || \"\").split(\"/\").filter(Boolean);\n"
-    "        if (seg.length >= 2) {\n"
-    "          path = \"/\" + seg[0] + \"/\" + (ib.transport || \"ws\") + \"-\" + nanoid(8);\n"
-    "          freshPaths++;\n"
-    "        }\n"
-    "      }\n"
-    "      insInbound.run(\n"
-    "        ib.id,\n"
-    "        ib.tag,\n"
-    "        ib.label ?? \"\", // 🧩 نامِ اینباند (قبلاً جا می‌افتاد)\n"
-    "        ib.protocol,\n"
-    "        ib.transport,\n"
-    "        ib.port,\n"
-    "        path,\n"
-    "        ib.host,\n"
-    "        ib.enabled,\n"
-    "        ib.created_at,\n"
-    "      );\n"
-    "    }",
+    "    for (const ib of payload.inbounds) {\n      insInbound.run(\n        ib.id,\n        ib.tag,\n        ib.protocol,\n        ib.transport,\n        ib.port,\n        ib.path,\n        ib.host,\n        ib.enabled,\n        ib.created_at,\n      );\n    }",
+    "    for (const ib of payload.inbounds) {\n      // 🧩 (وصلهٔ ما) گزینهٔ «مسیرِ تازه»: پیشوندِ اول از بکاپ می‌ماند (مثل wpnfa)\n      //     و دمِ رندوم دوباره ساخته می‌شود ⇒ پنلِ تازه تصادمِ مسیر با پنلِ قدیم ندارد.\n      let path = ib.path;\n      if (options.freshPaths) {\n        const seg = String(ib.path || \"\").split(\"/\").filter(Boolean);\n        if (seg.length >= 2) {\n          path = \"/\" + seg[0] + \"/\" + (ib.transport || \"ws\") + \"-\" + nanoid(8);\n          freshPaths++;\n        }\n      }\n      insInbound.run(\n        ib.id,\n        ib.tag,\n        ib.label ?? \"\", // 🧩 نامِ اینباند (قبلاً جا می‌افتاد)\n        ib.protocol,\n        ib.transport,\n        ib.port,\n        path,\n        ib.host,\n        ib.enabled,\n        ib.created_at,\n      );\n    }",
     "backup.ts: label + مسیرِ تازه")
 sub("apps/server/src/backup.ts",
     "  return { users: payload.users.length, inbounds: payload.inbounds.length };",
@@ -539,6 +505,11 @@ def copy_file(rel_src, rel_dst, label):
 
 copy_file("patches/files/inbounds.tsx", "apps/web/src/pages/inbounds.tsx",
           "web/inbounds.tsx: دکمهٔ ویرایش + هشدارِ مسیر")
+
+# ── ۱۷–۲۱) 🔑 توکنِ دسترسیِ ربات (فایلِ جدا: patches/sections_bot_token.py) ──
+_sect = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sections_bot_token.py")
+if os.path.exists(_sect):
+    exec(compile(io.open(_sect, encoding="utf-8").read(), "sections_bot_token.py", "exec"), globals())
 
 print("✅ وصله‌ها اعمال شد:" if not CHECK else "✅ بررسیِ لنگرها (بدونِ تغییر):")
 for d in done:

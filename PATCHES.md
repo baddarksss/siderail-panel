@@ -40,3 +40,20 @@
 | ۱۶ | رشته‌های سه‌زبانه برای گزینهٔ بالا | `i18n.tsx` |
 
 آزمون‌ها: `patches/tests/backup.test.mjs` ⇒ **۱۱/۱۱** (با `/tmp/node22/bin/node --experimental-sqlite`).
+
+## وصله‌های ۱۷–۲۱ (۲۰۲۶-۰۹-۲۹) — 🔑 توکنِ دسترسیِ ربات («آدرس و رمز نده؛ فقط توکن بده»)
+| # | وصله | فایل |
+|---|---|---|
+| ۱۷ | ماژولِ توکن: ساخت/فهرست/ابطال/اعتبارسنجی + «دست‌دادن» (نام/آدرس/اینباندها/کاربران/ترافیک) | `apps/server/src/api-tokens.ts` (تازه) |
+| ۱۸ | جدولِ `api_tokens` (راز فقط به‌شکلِ sha256) در `migrate()` | `apps/server/src/db.ts` |
+| ۱۹ | `authGuard` توکنِ `srb1.…` را مثلِ JWT می‌پذیرد (Authorization: Bearer) ⇒ همهٔ `/api` | `apps/server/src/auth.ts` |
+| ۲۰ | مسیرهای `GET/POST /api/api-tokens` · `DELETE /api/api-tokens/:id` · `GET /api/bot/handshake` | `apps/server/src/routes.ts` |
+| ۲۱ | بخشِ «Bot access token» در صفحهٔ ربات (ساخت + کپی + ابطال) + متدهای API + ترجمه‌های en/ru/zh | `apps/web/src/components/api-token-card.tsx` (تازه) · `pages/bot.tsx` · `lib/api.ts` · `lib/types.ts` · `lib/i18n.tsx` |
+
+**شکلِ توکن:** `srb1.<base64url({u:آدرس,n:نام,t:زمان})>.<id>.<secret>`
+⇒ رباتِ بیرونی آدرسِ پنل را از خودِ توکن می‌خواند؛ نیازی به آدرس/نام‌کاربری/رمز نیست.
+
+آزمون‌ها: `patches/tests/bot-token.test.mjs` ⇒ **۲۴/۲۴** · `backup.test.mjs` ⇒ **۱۱/۱۱**
+(اجرا: `/tmp/node22/bin/node --experimental-sqlite patches/tests/<file>`)
+بازتولیدپذیری: `python3 patches/panel-patch.py` روی نسخهٔ تازهٔ upstream بدونِ diff اجرا می‌شود
+(خروجی، بایت‌به‌بایت با همین ریپو یکی است).

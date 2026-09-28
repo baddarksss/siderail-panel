@@ -28,6 +28,13 @@ import {
   type AuthedRequest,
 } from "./auth.js";
 import { db, getSetting, setSetting } from "./db.js";
+import {
+  listApiTokens,
+  createApiToken,
+  revokeApiToken,
+  originFromHeaders,
+  panelHandshake,
+} from "./api-tokens.js";
 import { getSystemStats } from "./system.js";
 import { listInbounds, setInboundEnabled, getInbound, updateInbound } from "./inbounds.js";
 import {
@@ -581,6 +588,52 @@ api.post("/bot/test", requirePermission("bot"), async (req: AuthedRequest, res) 
   }
   logActivity(req.admin!.username, "bot_test", "");
   res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔑 توکنِ ربات (API Token) — وصلهٔ ما
+//   ادمین در صفحهٔ «ربات تلگرام» یک توکن می‌سازد و همان را به رباتِ مدیریت می‌دهد؛
+//   آدرسِ عمومیِ پنل داخلِ خودِ توکن است، پس ربات نه آدرس می‌پرسد نه نام‌کاربری/رمز.
+//   خودِ توکن در authGuard همهٔ مسیرهای /api را باز می‌کند (Authorization: Bearer).
+// ─────────────────────────────────────────────────────────────────────────────
+api.get("/api-tokens", requirePermission("bot"), (req, res) => {
+  res.json({
+    tokens: listApiTokens(),
+    url: originFromHeaders(req.headers as unknown as Record<string, unknown>),
+  });
+});
+
+api.post("/api-tokens", requirePermission("bot"), (req: AuthedRequest, res) => {
+  const body = z.object({ name: z.string().max(40).optional() }).safeParse(req.body ?? {});
+  if (!body.success) {
+    res.status(400).json({ error: "invalid input" });
+    return;
+  }
+  const created = createApiToken(
+    body.data.name || "bot",
+    originFromHeaders(req.headers as unknown as Record<string, unknown>),
+  );
+  if (!created.ok || !created.token) {
+    res.status(400).json({ error: created.error || "could not create token" });
+    return;
+  }
+  logActivity(req.admin!.username, "api_token_create", `#${created.info?.id ?? 0}`);
+  res.json({ ok: true, token: created.token, info: created.info });
+});
+
+api.delete("/api-tokens/:id", requirePermission("bot"), (req: AuthedRequest, res) => {
+  const done = revokeApiToken(Number(req.params.id));
+  if (!done.ok) {
+    res.status(404).json({ error: done.error || "not found" });
+    return;
+  }
+  logActivity(req.admin!.username, "api_token_revoke", `#${req.params.id}`);
+  res.json({ ok: true });
+});
+
+// 🤝 دست‌دادن: ربات با همان توکن در یک درخواست، نام/آدرس/اینباندها/کاربران/ترافیک را می‌خواند.
+api.get("/bot/handshake", requirePermission("dashboard"), (req, res) => {
+  res.json(panelHandshake(originFromHeaders(req.headers as unknown as Record<string, unknown>)));
 });
 
 void db;

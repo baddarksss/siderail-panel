@@ -12,6 +12,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
 import { db, getSetting, setSetting } from "./db.js";
+import { API_TOKEN_PREFIX, verifyApiToken, touchApiToken } from "./api-tokens.js";
 import { config } from "./config.js";
 
 export type Permission =
@@ -54,6 +55,8 @@ export interface AdminInfo {
 
 export interface AuthedRequest extends Request {
   admin?: AdminInfo;
+  /** شناسهٔ توکنِ ربات — اگر درخواست با توکنِ ماشین آمده باشد (نه سشنِ ادمین) */
+  apiTokenId?: number;
 }
 
 function toInfo(row: AdminRow): AdminInfo {
@@ -204,6 +207,30 @@ export function authGuard(req: AuthedRequest, res: Response, next: NextFunction)
   const token = req.cookies?.sr_token || req.headers.authorization?.replace("Bearer ", "");
   if (!token) {
     res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  // 🔑 توکنِ ربات (srb1.…) — مسیرِ دومِ احراز هویت: بدونِ نام‌کاربری/رمز، روی همهٔ /api کار می‌کند.
+  if (token.startsWith(API_TOKEN_PREFIX)) {
+    const hit = verifyApiToken(token);
+    if (!hit.ok || !hit.id) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    touchApiToken(hit.id);
+    // اختیاراتِ توکن = مالکِ پنل (ربات همان کارهایی را می‌کند که ادمین با پنل می‌کرد)
+    const owner = db
+      .prepare("SELECT id, username, created_at FROM admins WHERE role = 'owner' ORDER BY id ASC LIMIT 1")
+      .get() as { id: number; username: string; created_at: number } | undefined;
+    req.admin = {
+      id: owner?.id ?? 0,
+      username: "bot:" + (hit.name || "token"),
+      role: "owner",
+      permissions: ALL_PERMISSIONS,
+      dataLimit: 0,
+      createdAt: owner?.created_at ?? 0,
+    };
+    req.apiTokenId = hit.id;
+    next();
     return;
   }
   try {

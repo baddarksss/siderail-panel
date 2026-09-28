@@ -158,6 +158,14 @@ export const api = {
     request("/api/bot", { method: "PUT", body: JSON.stringify(payload) }),
   testBot: (token: string, chatIds: string[]) =>
     request("/api/bot/test", { method: "POST", body: JSON.stringify({ token, chatIds }) }),
+  // 🔑 توکنِ دسترسیِ ربات: ساخت/فهرست/ابطال — بدونِ نیاز به آدرس و نام‌کاربری در ربات
+  listApiTokens: () => request<import("./types").ApiTokenList>("/api/api-tokens"),
+  createApiToken: (name: string) =>
+    request<{ ok: boolean; token: string; info: import("./types").ApiTokenInfo }>(
+      "/api/api-tokens",
+      { method: "POST", body: JSON.stringify({ name }) },
+    ),
+  revokeApiToken: (id: number) => request(`/api/api-tokens/${id}`, { method: "DELETE" }),
 };
 
 export function exportBackupUrl(): string {

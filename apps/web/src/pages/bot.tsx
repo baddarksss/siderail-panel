@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { BotConfig } from "@/lib/types";
+import { ApiTokenCard } from "@/components/api-token-card";
 
 export default function BotPage() {
   const toast = useToast();
@@ -164,6 +165,9 @@ export default function BotPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 🔑 توکنِ دسترسیِ ربات — وصلهٔ ما */}
+      <ApiTokenCard />
     </div>
   );
 }

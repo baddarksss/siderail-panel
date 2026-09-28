@@ -12,7 +12,7 @@ BRANCH = "main"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "coverage", "out",
              ".turbo", ".cache", ".venv", "__pycache__", ".svelte-kit", "data"}
-SKIP_FILES = {".DS_Store"}
+SKIP_FILES = {".DS_Store", "tsconfig.app.tsbuildinfo", "tsconfig.node.tsbuildinfo", "tsconfig.tsbuildinfo"}
 
 
 def load_token():

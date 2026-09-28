@@ -128,6 +128,22 @@ export interface RoutingPreset {
   values: string[];
 }
 
+/** 🔑 توکنِ دسترسیِ ربات (وصلهٔ ما) — همان که در صفحهٔ ربات ساخته می‌شود */
+export interface ApiTokenInfo {
+  id: number;
+  name: string;
+  prefix: string;
+  createdAt: number;
+  lastUsedAt: number;
+  usedCount: number;
+  revokedAt: number | null;
+}
+
+export interface ApiTokenList {
+  tokens: ApiTokenInfo[];
+  url: string;
+}
+
 export interface BotConfig {
   enabled: boolean;
   token: string;
