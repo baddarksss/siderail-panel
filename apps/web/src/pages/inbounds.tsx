@@ -1,22 +1,11 @@
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Router, Waypoints, Network, Lock, Pencil } from "lucide-react";
+import { Router, Waypoints, Network, Lock } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type { Inbound } from "@/lib/types";
 
 const protocolAccent: Record<string, string> = {
@@ -29,12 +18,6 @@ export default function InboundsPage() {
   const toast = useToast();
   const { t } = useI18n();
   const qc = useQueryClient();
-  const [editing, setEditing] = useState<Inbound | null>(null);
-  const [form, setForm] = useState<{ label: string; tag: string; path: string }>({
-    label: "",
-    tag: "",
-    path: "",
-  });
 
   const { data: inbounds = [] } = useQuery<Inbound[]>({
     queryKey: ["inbounds"],
@@ -51,26 +34,6 @@ export default function InboundsPage() {
     },
     onError: (e: Error) => toast.push("error", e.message),
   });
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.updateInbound(editing!.id, {
-        label: form.label,
-        tag: form.tag,
-        path: form.path,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["inbounds"] });
-      toast.push("success", t("inboundSaved"));
-      setEditing(null);
-    },
-    onError: (e: Error) => toast.push("error", e.message),
-  });
-
-  const openEdit = (ib: Inbound) => {
-    setForm({ label: ib.label || "", tag: ib.tag, path: ib.path });
-    setEditing(ib);
-  };
 
   const enabledCount = inbounds.filter((i) => i.enabled).length;
 
@@ -102,28 +65,12 @@ export default function InboundsPage() {
                   >
                     {ib.protocol.slice(0, 2)}
                   </div>
-                  <div className="min-w-0">
-                    <div className="truncate font-heading text-sm">{ib.label || ib.tag}</div>
-                    {ib.label ? (
-                      <div className="truncate font-mono text-[10px] text-text/50">{ib.tag}</div>
-                    ) : null}
-                  </div>
+                  <div className="truncate font-heading text-sm">{ib.tag}</div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    title={t("inboundEditTitle")}
-                    onClick={() => openEdit(ib)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Switch
-                    checked={!!ib.enabled}
-                    onCheckedChange={(v) => toggle.mutate({ id: ib.id, enabled: v })}
-                  />
-                </div>
+                <Switch
+                  checked={!!ib.enabled}
+                  onCheckedChange={(v) => toggle.mutate({ id: ib.id, enabled: v })}
+                />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-1.5">
                 <Badge variant="neutral" className="justify-center truncate text-[10px] uppercase">
@@ -152,51 +99,6 @@ export default function InboundsPage() {
           </Card>
         ))}
       </div>
-
-      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("inboundEditTitle")}</DialogTitle>
-          </DialogHeader>
-          <p className="-mt-2 text-xs font-base text-text/60">{t("inboundEditHint")}</p>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="ib-label">{t("inboundLabel")}</Label>
-              <Input
-                id="ib-label"
-                value={form.label}
-                placeholder={editing?.tag || ""}
-                onChange={(e) => setForm({ ...form, label: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ib-tag">{t("inboundTag")}</Label>
-              <Input
-                id="ib-tag"
-                value={form.tag}
-                onChange={(e) => setForm({ ...form, tag: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ib-path">{t("path")}</Label>
-              <Input
-                id="ib-path"
-                value={form.path}
-                className="font-mono"
-                onChange={(e) => setForm({ ...form, path: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="neutral" onClick={() => setEditing(null)}>
-              {t("cancel")}
-            </Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending}>
-              {save.isPending ? t("saving") : t("save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

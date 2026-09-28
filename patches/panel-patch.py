@@ -25,7 +25,12 @@ def write(rel, txt):
     io.open(os.path.join(ROOT, rel), "w", encoding="utf-8").write(txt)
 
 def sub(rel, old, new, label, count=1, required=True):
+    """جای‌گزینیِ لنگر‌محور. اگر متنِ تازه از قبل باشد، «انجام‌شده» شمرده می‌شود
+    (اجرای دوبارهٔ وصله‌گر روی سورسِ وصله‌خورده، وصله‌ها را دوباره اعمال نمی‌کند)."""
     txt = read(rel)
+    if new is not None and txt.count(new) >= count:
+        done.append(label + " (از قبل)")
+        return
     n = txt.count(old)
     if n == count:
         if new is not None:
@@ -299,6 +304,26 @@ for lang, block in I18N.items():
 if not CHECK:
     write("apps/web/src/lib/i18n.tsx", txt)
 done.append("web/i18n.tsx: کلیدهای تازه")
+
+# ۹) انقضای مطلق (expireAt) + حجمِ اعشاری — برای انتقالِ دقیقِ «ساعت/مگابایتِ باقی‌مانده»
+#    در دکمهٔ «ریستِ کانفیگ» ربات. `expireDays` نسبی بود و ۲۱ ساعت را ۱ روز می‌کرد.
+sub("apps/server/src/users.ts",
+    "  expireDays?: number;\n  subExpireDays?: number;",
+    "  expireDays?: number;\n  /** انقضای مطلق (epoch ms) — بر expireDays اولویت دارد */\n  expireAt?: number;\n  subExpireDays?: number;",
+    "users.ts: expireAt در CreateUserInput")
+sub("apps/server/src/users.ts",
+    "      gb(input.dataLimit || 0),\n      input.ipLimit || 0,\n      expireFromDays(input.expireDays),",
+    "      gb(input.dataLimit || 0),\n      input.ipLimit || 0,\n      (input.expireAt != null ? input.expireAt : expireFromDays(input.expireDays)),",
+    "users.ts: expireAt در createUser")
+sub("apps/server/src/users.ts",
+    '  if (input.expireDays !== undefined) set("expire_at", expireFromDays(input.expireDays));',
+    '  if (input.expireDays !== undefined) set("expire_at", expireFromDays(input.expireDays));\n'
+    '  if (input.expireAt !== undefined) set("expire_at", input.expireAt || null);',
+    "users.ts: expireAt در updateUser")
+sub("apps/server/src/routes.ts",
+    "  expireDays: z.number().min(0).optional(),",
+    "  expireDays: z.number().min(0).optional(),\n  expireAt: z.number().int().min(0).optional(),",
+    "routes.ts: expireAt در userSchema")
 
 print("✅ وصله‌ها اعمال شد:" if not CHECK else "✅ بررسیِ لنگرها (بدونِ تغییر):")
 for d in done:

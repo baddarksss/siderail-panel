@@ -76,6 +76,7 @@ const userSchema = z.object({
   dataLimit: z.number().min(0).optional(),
   ipLimit: z.number().min(0).optional(),
   expireDays: z.number().min(0).optional(),
+  expireAt: z.number().int().min(0).optional(),
   subExpireDays: z.number().min(0).optional(),
   trafficReset: trafficReset.optional(),
   telegramId: z.string().optional(),

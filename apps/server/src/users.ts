@@ -24,6 +24,8 @@ export interface CreateUserInput {
   dataLimit?: number;
   ipLimit?: number;
   expireDays?: number;
+  /** انقضای مطلق (epoch ms) — بر expireDays اولویت دارد */
+  expireAt?: number;
   subExpireDays?: number;
   trafficReset?: TrafficReset;
   telegramId?: string;
@@ -89,7 +91,7 @@ export function createUser(input: CreateUserInput): UserWithInbounds {
       input.alpn || "h2,http/1.1",
       gb(input.dataLimit || 0),
       input.ipLimit || 0,
-      expireFromDays(input.expireDays),
+      (input.expireAt != null ? input.expireAt : expireFromDays(input.expireDays)),
       input.subExpireDays || 0,
       input.trafficReset || "never",
       input.telegramId || "",
@@ -120,6 +122,7 @@ export function updateUser(id: number, input: UpdateUserInput): UserWithInbounds
   if (input.dataLimit !== undefined) set("data_limit", gb(input.dataLimit));
   if (input.ipLimit !== undefined) set("ip_limit", input.ipLimit);
   if (input.expireDays !== undefined) set("expire_at", expireFromDays(input.expireDays));
+  if (input.expireAt !== undefined) set("expire_at", input.expireAt || null);
   if (input.subExpireDays !== undefined) set("sub_expire_days", input.subExpireDays);
   if (input.trafficReset !== undefined) set("traffic_reset", input.trafficReset);
   if (input.telegramId !== undefined) set("telegram_id", input.telegramId);
